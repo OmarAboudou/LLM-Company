@@ -3,6 +3,7 @@ import { z } from "zod"
 import {
     idDescription,
     loadExistingEmployee,
+    loadExistingLlmModel,
     parseId,
     printColumns,
     projectRoot,
@@ -11,7 +12,7 @@ import {
 import { UserError } from "../errors.ts"
 import type { Position } from "../position/position.ts"
 import { listPositions } from "../position/storage.ts"
-import { EmployeeConfigSchema } from "./employee.ts"
+import { type EmployeeConfig, EmployeeConfigSchema } from "./employee.ts"
 import { employeeExists, listEmployees, saveEmployee } from "./storage.ts"
 
 function positionsFilledBy(positions: Position[], employeeId: string): string {
@@ -21,15 +22,25 @@ function positionsFilledBy(positions: Position[], employeeId: string): string {
     return ids.length > 0 ? ids.join(", ") : "(none)"
 }
 
+async function requireLlmModel(config: EmployeeConfig): Promise<void> {
+    if (config.kind === "llm") {
+        await loadExistingLlmModel(config.provider, config.model)
+    }
+}
+
 async function createEmployee(rawId: string, config: unknown): Promise<void> {
     await requireCompany()
     const id = parseId("employee", rawId)
-    if (await employeeExists(projectRoot, id)) {
-        throw new UserError(`Employee "${id}" already exists.`)
-    }
     const result = EmployeeConfigSchema.safeParse(config)
     if (!result.success) {
         throw new UserError(z.prettifyError(result.error))
+    }
+    const [exists] = await Promise.all([
+        employeeExists(projectRoot, id),
+        requireLlmModel(result.data),
+    ])
+    if (exists) {
+        throw new UserError(`Employee "${id}" already exists.`)
     }
     await saveEmployee(projectRoot, { id, ...result.data })
     console.log(`Created employee "${id}".`)
@@ -52,11 +63,11 @@ export function registerEmployeeCommands(program: Command): void {
         .requiredOption("-n, --name <name>", "employee name")
         .requiredOption(
             "-p, --provider <provider-id>",
-            "LLM provider id in kebab-case, e.g. anthropic",
+            "LLM provider id, e.g. anthropic (see llmco provider list)",
         )
         .requiredOption(
             "-m, --model <model-id>",
-            "model id in llmco, in kebab-case, e.g. claude-opus-5-5 (not necessarily the model name the provider expects)",
+            "id of one of the provider's models in llmco, e.g. claude-opus-5-5 (see llmco model list), not its api id",
         )
         .action(async (rawId, { name, provider, model }) => {
             await createEmployee(rawId, { name, kind: "llm", provider, model })
