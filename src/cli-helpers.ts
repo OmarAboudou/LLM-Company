@@ -6,6 +6,8 @@ import { employeeExists, loadEmployee } from "./employee/storage.ts"
 import { UserError } from "./errors.ts"
 import { readText } from "./files.ts"
 import { IdSchema } from "./id.ts"
+import type { LlmProvider } from "./llm-provider/llm-provider.ts"
+import { llmProviderExists, loadLlmProvider } from "./llm-provider/storage.ts"
 import type { Position } from "./position/position.ts"
 import { loadPosition, positionExists } from "./position/storage.ts"
 
@@ -39,11 +41,17 @@ export async function readDescription(
     return readText(projectRoot, descriptionFile)
 }
 
+const entityFolders = {
+    position: ".llmco/positions",
+    employee: ".llmco/employees",
+    provider: ".llmco/llm-providers",
+}
+
 export function idDescription(
-    entity: "position" | "employee",
+    entity: keyof typeof entityFolders,
     example: string,
 ): string {
-    return `${entity} id, which is also the name of its folder in .llmco/${entity}s (kebab-case, e.g. ${example})`
+    return `${entity} id, which is also the name of its folder in ${entityFolders[entity]} (kebab-case, e.g. ${example})`
 }
 
 export function parseId(entity: string, id: string): string {
@@ -90,4 +98,14 @@ export async function loadExistingEmployee(rawId: string): Promise<Employee> {
         throw new UserError(`No employee "${id}". Run \`llmco employee list\`.`)
     }
     return loadEmployee(projectRoot, id)
+}
+
+export async function loadExistingLlmProvider(
+    rawId: string,
+): Promise<LlmProvider> {
+    const id = parseId("provider", rawId)
+    if (!(await llmProviderExists(projectRoot, id))) {
+        throw new UserError(`No provider "${id}". Run \`llmco provider list\`.`)
+    }
+    return loadLlmProvider(projectRoot, id)
 }
